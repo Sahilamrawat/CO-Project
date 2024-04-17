@@ -1,241 +1,752 @@
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <vector>
-#include <map>
-#include <stdexcept>
-#include <cstdlib>
+import re
 
-// Define the opcode values for each instruction type
-const int R_TYPE_OPCODE = 0b0110011;
-const int I_TYPE_OPCODE = 0b0010011;
-const int S_TYPE_OPCODE = 0b0100011;
-const int B_TYPE_OPCODE = 0b1100011;
-const int U_TYPE_OPCODE = 0b0110111;
-const int J_TYPE_OPCODE = 0b1101111;
-
-// Define the funct3 values for specific R and I type instructions
-const int ADD_FUNCT3 = 0b000;
-const int SUB_FUNCT3 = 0b000;
-const int SLT_FUNCT3 = 0b010;
-const int SLTU_FUNCT3 = 0b011;
-const int XOR_FUNCT3 = 0b100;
-const int SLL_FUNCT3 = 0b001;
-const int SRL_FUNCT3 = 0b101;
-const int OR_FUNCT3 = 0b110;
-const int AND_FUNCT3 = 0b111;
-
-const int LB_FUNCT3 = 0b000;
-const int LH_FUNCT3 = 0b001;
-const int LW_FUNCT3 = 0b010;
-const int LD_FUNCT3 = 0b011;
-const int ADDI_FUNCT3 = 0b000;
-const int SLTIU_FUNCT3 = 0b011;
-const int JALR_FUNCT3 = 0b000;
-
-const int SB_FUNCT3 = 0b000;
-const int SH_FUNCT3 = 0b001;
-const int SW_FUNCT3 = 0b010;
-const int SD_FUNCT3 = 0b011;
-
-const int BEQ_FUNCT3 = 0b000;
-const int BNE_FUNCT3 = 0b001;
-const int BGE_FUNCT3 = 0b101;
-const int BGEU_FUNCT3 = 0b111;
-const int BLT_FUNCT3 = 0b100;
-const int BLTU_FUNCT3 = 0b110;
-
-const int LUI_OPCODE = 0b0110111;
-const int AUIPC_OPCODE = 0b0010111;
-
-const int JAL_OPCODE = 0b1101111;
-
-std::map<std::string, std::vector<int>> R_TYPE_FUNCTIONS = {
-    {"add", {ADD_FUNCT3, R_TYPE_OPCODE}},
-    {"sub", {SUB_FUNCT3, R_TYPE_OPCODE}},
-    {"slt", {SLT_FUNCT3, R_TYPE_OPCODE}},
-    {"sltu", {SLTU_FUNCT3, R_TYPE_OPCODE}},
-    {"xor", {XOR_FUNCT3, R_TYPE_OPCODE}},
-    {"sll", {SLL_FUNCT3, R_TYPE_OPCODE}},
-    {"srl", {SRL_FUNCT3, R_TYPE_OPCODE}},
-    {"or", {OR_FUNCT3, R_TYPE_OPCODE}},
-    {"and", {AND_FUNCT3, R_TYPE_OPCODE}},
-};
-
-std::map<std::string, std::vector<int>> I_TYPE_FUNCTIONS = {
-    {"lb", {LB_FUNCT3, I_TYPE_OPCODE}},
-    {"lh", {LH_FUNCT3, I_TYPE_OPCODE}},
-    {"lw", {LW_FUNCT3, I_TYPE_OPCODE}},
-    {"ld", {LD_FUNCT3, I_TYPE_OPCODE}},
-    {"addi", {ADDI_FUNCT3, I_TYPE_OPCODE}},
-    {"sltiu", {SLTIU_FUNCT3, I_TYPE_OPCODE}},
-    {"jalr", {JALR_FUNCT3, I_TYPE_OPCODE}},
-};
-
-std::map<std::string, std::vector<int>> S_TYPE_FUNCTIONS = {
-    {"sb", {SB_FUNCT3, S_TYPE_OPCODE}},
-    {"sh", {SH_FUNCT3, S_TYPE_OPCODE}},
-    {"sw", {SW_FUNCT3, S_TYPE_OPCODE}},
-    {"sd", {SD_FUNCT3, S_TYPE_OPCODE}},
-};
-
-std::map<std::string, std::vector<int>> B_TYPE_FUNCTIONS = {
-    {"beq", {BEQ_FUNCT3, B_TYPE_OPCODE}},
-    {"bne", {BNE_FUNCT3, B_TYPE_OPCODE}},
-    {"bge", {BGE_FUNCT3, B_TYPE_OPCODE}},
-    {"bgeu", {BGEU_FUNCT3, B_TYPE_OPCODE}},
-    {"blt", {BLT_FUNCT3, B_TYPE_OPCODE}},
-    {"bltu", {BLTU_FUNCT3, B_TYPE_OPCODE}},
-};
-
-std::map<std::string, int> U_TYPE_FUNCTIONS = {
-    {"lui", LUI_OPCODE},
-    {"auipc", AUIPC_OPCODE},
-};
-
-std::map<std::string, int> J_TYPE_FUNCTIONS = {
-    {"jal", JAL_OPCODE},
-};
-
-// Define a common encoding function for R, I, S, B, U, J types
-int common_encoding(int opcode, int rd, int rs1, int funct3, int rs2, int funct7 = 0) {
-    return (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode;
+registers = {'zero': '00000', 'ra': '00001', 'sp': '00010', 'gp': '00011', 'tp': '00100', 't0': '00101', 't1': '00110', 't2': '00111',
+             's0': '01000', 'fp': '01000', 's1': '01001', 'a0': '01010', 'a1': '01011', 'a2': '01100', 'a3': '01101', 
+             'a4': '01110', 'a5': '01111', 'a6': '10000', 'a7': '10001', 's2': '10010', 's3': '10011', 's4': '10100', 
+             's5': '10101', 's6': '10110', 's7': '10111', 's8': '11000', 's9': '11001', 's10': '11010', 's11': '11011', 
+             't3': '11100', 't4': '11101', 't5': '11110', 't6': '11111'
 }
 
-std::string int_to_bin(int num, int padding = 0) {
-    std::string result;
-    while (num) {
-        result.insert(result.begin(), '0' + (num & 1));
-        num >>= 1;
-    }
-    while (result.size() < padding) {
-        result.insert(result.begin(), '0');
-    }
-    return result.empty() ? "0" : result;
-}
+zero = '00000000000000000000000000000000'
+ra = '00000000000000000000000000000000'
+sp = '00000000000000000000000000000000'
+gp = '00000000000000000000000000000000'
+tp = '00000000000000000000000000000000'
+t0 = '00000000000000000000000000000000'
+t1 = '00000000000000000000000000000000'
+t2 = '00000000000000000000000000000000'
+s0 = '00000000000000000000000000000000'
+fp = '00000000000000000000000000000000'
+s1 = '00000000000000000000000000000000'
+a0 = '00000000000000000000000000000000'
+a1 = '00000000000000000000000000000000'
+a2, a3, a4, a5, a6, a7 = '00000000000000000000000000000000', '00000000000000000000000000000000', '00000000000000000000000000000000', '00000000000000000000000000000000', '00000000000000000000000000000000', '00000000000000000000000000000000'
+s2 = '00000000000000000000000000000000'
+s3 = '00000000000000000000000000000000'
+s4 = '00000000000000000000000000000000'
+s5 = '00000000000000000000000000000000'
+s6 = '00000000000000000000000000000000'
+s7 = '00000000000000000000000000000000'
+s8 = '00000000000000000000000000000000'
+s9 = '00000000000000000000000000000000'
+s10 = '00000000000000000000000000000000'
+s11 = '00000000000000000000000000000000'
+t3, t4, t5, t6 = '00000000000000000000000000000000', '00000000000000000000000000000000', '00000000000000000000000000000000', '00000000000000000000000000000000'
 
-void write_binary_to_file(const std::string& file_path, const std::vector<int>& binary_output) {
-    std::ofstream output_file(file_path);
-    if (!output_file.is_open()) {
-        throw std::runtime_error("Failed to open the output file.");
-    }
+output = open("C:\\Users\\kumar\\OneDrive\\Desktop\\output.txt", 'w+')
 
-    for (int binary : binary_output) {
-        output_file << int_to_bin(binary, 32) << std::endl;
-    }
+labels = {}
 
-    output_file.close();
-}
+def binarytodecimal(num, type='unsigned'):
+    if type == 'signed':
+        if num[0] == '1':
+            s = 0
+            s = s + (-2)*(len(num)-1)
+            for i in range(1, len(num)):
+                s = s + int(num[i]) * (2*(len(num)-i-1))
+            return s
+        if num[0] == '0':
+            s = 0
+            for i in range(1, len(num)):
+                s = s + int(num[i]) * (2*(len(num)-i-1))
+            return s
+    else:
+        s = 0
+        for i in range(0, len(num)):
+            s = s + int(num[i])(2*(len(num)-i-1))
+            return s
+        
+def signextend(digit, num, size=32):
+    if len(bin(num)[2:]) > size:
+        raise OverflowError('Error: Illegal immediate overflow')
+    return digit*(size-len(bin(num)[2:])) + bin(num)[2:]
 
-int r_type_encoding(int rd, int rs1, int rs2, const std::string& instruction) {
-    if (R_TYPE_FUNCTIONS.find(instruction) == R_TYPE_FUNCTIONS.end()) {
-        throw std::invalid_argument("Invalid R-type instruction: " + instruction);
-    }
-    int funct3 = R_TYPE_FUNCTIONS[instruction][0];
-    int opcode = R_TYPE_FUNCTIONS[instruction][1];
-    int funct7 = 0;  // Default funct7 value for most R-type instructions
-    return common_encoding(opcode, rd, rs1, funct3, rs2, funct7);
-}
+def decimaltobinary(num, type='unsigned', size=32):
+    if type == 'signed':
+        if num < 0:
+            number = '0' + bin(abs(num))[2:]
+            new = ''
+            for i in number:
+                if i == '0':
+                    new = new + '1'
+                else:
+                    new = new + '0'
+            onescomplement = int(new, 2)
+            twoscomplement = onescomplement + 1
+            return signextend('1', twoscomplement, size)
+        if num >= 0:
+            twoscomplement = num
+            return signextend('0', twoscomplement, size)
+    if type == 'unsigned':
+        nums = num
+        return signextend('0', nums, size)
+    
+def contains_integers(input_string):
+    pattern = r'^[+-]?\d+$'
+    return bool(re.match(pattern, input_string))
 
-int i_type_encoding(int rd, int rs1, int imm, const std::string& instruction) {
-    if (I_TYPE_FUNCTIONS.find(instruction) == I_TYPE_FUNCTIONS.end()) {
-        throw std::invalid_argument("Invalid I-type instruction: " + instruction);
-    }
-    int funct3 = I_TYPE_FUNCTIONS[instruction][0];
-    int opcode = I_TYPE_FUNCTIONS[instruction][1];
-    return common_encoding(opcode, rd, rs1, funct3, imm);
-}
+class assembler:
+    def remove_special_characters(self, lines):
+        self.new_lines = []
+        for i in lines:
+            j = re.sub(r'\n', '', i)
+            k = re.sub(r'//.*', '', j)
+            l = re.sub(r'\w+:', '', k)
+            self.new_lines.append(l.strip())       
+            if re.match(r'\b\w+:', k):
+                labels[re.search(r'\b\w+:', k).group()] = lines.index(i)
+        self.new_line = list(filter(lambda x: x != '', self.new_lines))
+        return self.new_line
+                
+    def display(self):
+        print(self.new_line)
+        print(labels)
+        
+    def execution(self, line):
+        if line == 'beq zero,zero,0':
+            globals()['pc'] = len(globals()['new_lines'])*4
+            imm = decimaltobinary(0, 'signed')
+            output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'000'+imm[27:31]+imm[20]+'1100011\n')
+            return
+        elif line.split()[0] == 'jal':
+            self.jal(line)
+        elif line.split()[0] == 'addi':
+            self.addi(line)
+        elif line.split()[0] == 'add':
+            self.add(line)
+        elif line.split()[0] =='sub':
+            self.sub(line)
+        elif line.split()[0] == 'slt':
+            self.slt(line)
+        elif line.split()[0] == 'sltu':
+            self.sltu(line)
+        elif line.split()[0] == 'sll':
+            self.sll(line)
+        elif line.split()[0] == 'srl':
+            self.srl(line)
+        elif line.split()[0] == 'or':
+            self.OR(line)
+        elif line.split()[0] == 'and':
+            self.AND(line)
+        elif line.split()[0] == 'xor':
+            self.xor(line)
+        elif line.split()[0] == 'lw':
+            self.lw(line)
+        elif line.split()[0] == 'sltiu':
+            self.sltiu(line)
+        elif line.split()[0] == 'jalr':
+            self.jalr(line)
+        elif line.split()[0] == 'sw':
+            self.sw(line)
+        elif line.split()[0] == 'beq':
+            self.beq(line)
+        elif line.split()[0] == 'bne':
+            self.bne(line)
+        elif line.split()[0] == 'bge':
+            self.bge(line)
+        elif line.split()[0] == 'bgeu':
+            self.bgeu(line)
+        elif line.split()[0] == 'blt':
+            self.blt(line)
+        elif line.split()[0] == 'bltu':
+            self.bltu(line)
+        elif line.split()[0] == 'auipc':
+            self.auipc(line)
+        elif line.split()[0] == 'lui':
+            self.lui(line)
+        elif line.split()[0] == 'jal':
+            self.jal(line)
+        else:
+            print('Error: Invalid instruction')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        
+    def add(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'000'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+            
+    def sub(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            output.write('0100000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'000'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+    
+    def slt(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'010'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+    
+    def sltu(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'011'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+            
+    def xor(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'100'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+        
+    def sll(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'001'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+    
+    def srl(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'101'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+    
+    def OR(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'110'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+            
+    def AND(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals() or line.split()[1].split(',')[2] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals() and line.split()[1].split(',')[2] in globals():
+            output.write('0000000'+registers[line.split()[1].split(',')[2]]+registers[line.split()[1].split(',')[1]]+'111'+registers[line.split()[1].split(',')[0]]+'0110011\n')
+            globals()['pc'] += 4
+            
+    def addi(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            try:
+                imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed', 12)
+                output.write(decimaltobinary(int(line.split()[1].split(',')[2]), 'signed', 12)+registers[line.split()[1].split(',')[1]]+'000'+registers[line.split()[1].split(',')[0]]+'0010011\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Invalid immediate length')
+                globals()['pc'] = len(globals()['new_lines'])
+                return
+            
+    def lw(self, line):
+        src_reg = re.findall(r'\b\w+\s*,\s*(-?\d+)\((\w+)\)', line)[0][1]
+        imm = re.findall(r'\b\w+\s*,\s*(-?\d+)\((\w+)\)', line)[0][0]
+        if line.split()[1].split(',')[0] not in globals() or src_reg not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if not contains_integers(imm):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and src_reg in globals():
+            try:
+                immediate = decimaltobinary(int(imm), 'signed', 12)
+                output.write(immediate+registers[src_reg]+'010'+registers[line.split()[1].split(',')[0]]+'0000011\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Illegal immediate length')
+                globals()['pc'] = len(globals()['new_lines'])
+                return
+    
+    def sltiu(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if not contains_integers(line.split()[1].split(',')[2]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            try:
+                immediate = decimaltobinary(int(line.split()[1].split(',')[2]), 'unsigned', 12)
+                output.write(immediate+registers[line.split()[1].split(',')[1]]+'011'+registers[line.split()[1].split(',')[0]]+'0010011\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Illegal immediate length')
+                globals()['pc'] = len(globals()['new_lines'])*4
+                return
+    
+    def jalr(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if not contains_integers(line.split()[1].split(',')[2]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            try:
+                immediate = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed', 12)
+                output.write(immediate+registers[line.split()[1].split(',')[1]]+'000'+registers[line.split()[1].split(',')[0]]+'1100111\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Illegal immediate length')
+                globals()['pc'] = len(globals()['new_lines'])*4
+                return
+    
+    def sw(self, line):
+        src_reg = re.findall(r'\b\w+\s*,\s*(-?\d+)\((\w+)\)', line)[0][1]
+        imm = re.findall(r'\b\w+\s*,\s*(-?\d+)\((\w+)\)', line)[0][0]
+        if src_reg not in globals() or line.split()[1].split(',')[0] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if not contains_integers(imm):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return            
+        if line.split()[1].split(',')[0] in globals() and src_reg in globals():
+            try:
+                immediate = decimaltobinary(int(imm), 'signed', 12)
+                output.write(immediate[:7]+registers[line.split()[1].split(',')[0]]+registers[src_reg]+'010'+immediate[7:]+'0100011\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Illegal immediate length')
+                globals()['pc'] = len(globals()['new_lines'])*4
+                return
+    
+    def beq(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[2]+':' not in globals()['labels'] and not contains_integers(line.split()[1].split(',')[2]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            if line.split()[1].split(',')[2]+':' not in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]]) == binarytodecimal(globals()[line.split()[1].split(',')[1]]):
+                    try:
+                        imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'000'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'000'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+            elif line.split()[1].split(',')[2]+':' in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]], 'signed') == binarytodecimal(globals()[line.split()[1].split(',')[1]], 'signed'):
+                    try:
+                        imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4), 'signed')
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'000'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4),'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'000'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+    
+    def bne(self, line):
+        split_line = line.split(' ')
+        if len(split_line) != 2:
+            print('Error: Invalid instruction format')
+            globals()['pc'] = len(globals()['new_lines']) * 4
+            return
+        
+        args = split_line[1].split(',')
+        if len(args) != 3:
+            print('Error: Invalid instruction format')
+            globals()['pc'] = len(globals()['new_lines']) * 4
+            return
+        
+        rs1 = args[0].strip()
+        rs2 = args[1].strip()
+        label = args[2].strip()
+        
+        if rs1 not in globals() or rs2 not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines']) * 4
+            return
+        
+        if label not in globals()['labels'] and not contains_integers(label):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines']) * 4
+            return
+        
+        if binarytodecimal(globals()[rs1]) != binarytodecimal(globals()[rs2]):
+            try:
+                imm = decimaltobinary(int(label), 'signed', 12)
+                output.write(imm[0] + imm[2:8] + registers[rs2] + registers[rs1] + '001' + imm[8:] + imm[1] + '1100011\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Illegal immediate length')
+                globals()['pc'] = len(globals()['new_lines']) * 4
+            return
+                
+        try:
+            imm = decimaltobinary(labels[label] * 4 - (globals()['pc'] + 4), 'signed')
+            output.write(imm[19] + imm[21:27] + registers[rs2] + registers[rs1] + '001' + imm[27:31] + imm[20] + '1100011\n')
+            globals()['pc'] += 4
+        except OverflowError:
+            print('Error: Illegal immediate length')
+            globals()['pc'] = len(globals()['new_lines']) * 4
+            return
 
-int s_type_encoding(int rd, int rs1, int imm, const std::string& instruction) {
-    if (S_TYPE_FUNCTIONS.find(instruction) == S_TYPE_FUNCTIONS.end()) {
-        throw std::invalid_argument("Invalid S-type instruction: " + instruction);
-    }
-    int funct3 = S_TYPE_FUNCTIONS[instruction][0];
-    int opcode = S_TYPE_FUNCTIONS[instruction][1];
-    return common_encoding(opcode, rd, rs1, funct3, imm);
-}
+    
+    def bge(self, line):
+        if line.split()[1].split(',')[0] not in globals() and line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[2]+':' not in globals()['labels'] and not contains_integers(line.split()[1].split(',')[2]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            if line.split()[1].split(',')[2]+':' not in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]], 'signed') >= binarytodecimal(globals()[line.split()[1].split(',')[1]], 'signed'):
+                    try:
+                        imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                    
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'111'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'111'+imm[27:31]+imm[20]+'1100011\n')                    
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+            elif line.split()[1].split(',')[2]+':' in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]], 'signed') >= binarytodecimal(globals()[line.split()[1].split(',')[1]], 'signed'):
+                    try:
+                        imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4),'signed')
+                        
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'111'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
+                        
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4), 'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'101'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+                
+    def bgeu(self, line):
+        
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[2]+':' not in globals()['labels'] and not contains_integers(line.split()[1].split(',')[2]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return 
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            if line.split()[1].split(',')[2] not in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]]) >= binarytodecimal(globals()[line.split()[1].split(',')[1]]):
+                    try:
+                        imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                        
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'111'+imm[27:31]+imm[20]+'1100011\n')
+                        
+                        return
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'111'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+            elif line.split()[1].split(',')[2]+':' in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]]) >= binarytodecimal(globals()[line.split()[1].split(',')[1]]):
+                    try:
+                        imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4), 'signed')
+                        
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'111'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
+            
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4), 'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'111'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+    
+    def blt(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[2]+':' not in globals()['labels'] and not contains_integers(line.split()[1].split(',')[2]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            if line.split()[1].split(',')[2] not in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]], 'signed') < binarytodecimal(globals()[line.split()[1].split(',')[1]], 'signed'):
+                    try:
+                        imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                        
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'100'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'100'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+            elif line.split()[1].split(',')[2]+':' in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]], 'signed') < binarytodecimal(globals()[line.split()[1].split(',')[1]], 'signed'):
+                    try:
+                        imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4), 'signed')
+                        
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'100'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
 
-int b_type_encoding(int rs1, int rs2, int imm, const std::string& instruction) {
-    if (B_TYPE_FUNCTIONS.find(instruction) == B_TYPE_FUNCTIONS.end()) {
-        throw std::invalid_argument("Invalid B-type instruction: " + instruction);
-    }
-    int funct3 = B_TYPE_FUNCTIONS[instruction][0];
-    int opcode = B_TYPE_FUNCTIONS[instruction][1];
-    return common_encoding(opcode, 0, rs1, funct3, rs2, imm);
-}
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4),'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'100'+imm[27:31]+imm[20]+'1100011\n')                    
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+    
+    def bltu(self, line):
+        if line.split()[1].split(',')[0] not in globals() or line.split()[1].split(',')[1] not in globals():
+            print('Error: No such register or invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[2]+':' not in globals()['labels'] and not contains_integers(line.split()[1].split(',')[2]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals() and line.split()[1].split(',')[1] in globals():
+            if line.split()[1].split(',')[2]+':' not in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]]) < binarytodecimal(globals()[line.split()[1].split(',')[1]]):
+                    try:
+                        imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                        
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'110'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
+                        
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(int(line.split()[1].split(',')[2]), 'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'110'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+            elif line.split()[1].split(',')[2]+':' in globals()['labels']:
+                if binarytodecimal(globals()[line.split()[1].split(',')[0]]) < binarytodecimal(globals()[line.split()[1].split(',')[1]]):
+                    try:
+                        imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()[pc]+4),'signed')
+                        output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'110'+imm[27:31]+imm[20]+'1100011\n')
+                        globals()['pc'] += 4
+                        return
+                    except OverflowError:
+                        print('Error: Illegal immediate length')
+                        globals()['pc'] = len(globals()['new_lines'])*4
+                        return
+                try:
+                    imm = decimaltobinary(labels[line.split()[1].split(',')[2]+':']*4-(globals()['pc']+4),'signed')
+                    
+                    output.write(imm[19]+imm[21:27]+registers[line.split()[1].split(',')[1]]+registers[line.split()[1].split(',')[0]]+'110'+imm[27:31]+imm[20]+'1100011\n')
+                    globals()['pc'] += 4
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+    
+    def auipc(self, line):
+        if line.split()[1].split(',')[0] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if not contains_integers(line.split()[1].split(',')[1]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals():
+            imm = int(line.split()[1].split(',')[1])
+            try:
+                immediate = decimaltobinary(imm, 'signed')
+                
+                output.write(immediate[:20]+registers[line.split()[1].split(',')[0]]+'0010111\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Illegal immediate length')
+                globals()['pc'] = len(globals()['new_lines'])*4
+                return
+    
+    def lui(self, line):
+        if line.split()[1].split(',')[0] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if not contains_integers(line.split()[1].split(',')[1]):
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals():
+            imm = int(line.split()[1].split(',')[1])
+            try:
+                immediate = decimaltobinary(imm, 'signed')
+                output.write(immediate[0:20]+registers[line.split()[1].split(',')[0]]+'0110111\n')
+                globals()['pc'] += 4
+            except OverflowError:
+                print('Error: Illegal immediate length')
+                globals()['pc'] = len(globals()['new_lines'])*4
+                return
+    
+    def jal(self, line):
+        if line.split()[1].split(',')[0] not in globals():
+            print('Error: No such register')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if not contains_integers(line.split()[1].split(',')[1]) and line.split()[1].split(',')[1]+':' not in globals()['labels']:
+            print('Error: Invalid immediate')
+            globals()['pc'] = len(globals()['new_lines'])*4
+            return
+        if line.split()[1].split(',')[0] in globals():
+            if line.split()[1].split(',')[1]+':' not in globals()['labels']:
+                imm = int(line.split()[1].split(',')[1])
+                try:
+                    imm1 = decimaltobinary(imm, 'signed')
+                    
+                    output.write(imm1[11]+imm1[21:31]+imm1[20]+imm1[12:20]+registers[line.split()[1].split(',')[0]]+'0010111\n')
+                    globals()['pc'] += 4
+                    return
+                except OverflowError:
+                    
+                    print('Error: illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+            elif line.split()[1].split(',')[1]+':' in globals()['labels']:
+                
+                try:
+                    imm = decimaltobinary(labels[line.split()[1].split(',')[1]+':']*4-(globals()['pc']+4), 'signed', 20)
+                    
+                    output.write(imm[0]+imm[10:]+imm[1:9]+registers[line.split()[1].split(',')[0]]+'0010111\n')
+                    globals()['pc'] += 4
+                    return
+                except OverflowError:
+                    print('Error: Illegal immediate length')
+                    globals()['pc'] = len(globals()['new_lines'])*4
+                    return
+                
 
-int u_type_encoding(int rd, int imm, const std::string& instruction) {
-    if (U_TYPE_FUNCTIONS.find(instruction) == U_TYPE_FUNCTIONS.end()) {
-        throw std::invalid_argument("Invalid U-type instruction: " + instruction);
-    }
-    int opcode = U_TYPE_FUNCTIONS[instruction];
-    return common_encoding(opcode, rd, 0, 0, 0, imm);
-}
+with open("C:\\Users\\kumar\Downloads\\test1.txt", 'r') as f:
+    lines = f.readlines()
 
-int j_type_encoding(int rd, int imm, const std::string& instruction) {
-    if (J_TYPE_FUNCTIONS.find(instruction) == J_TYPE_FUNCTIONS.end()) {
-        throw std::invalid_argument("Invalid J-type instruction: " + instruction);
-    }
-    int opcode = J_TYPE_FUNCTIONS[instruction];
-    return common_encoding(opcode, rd, 0, 0, 0, imm);
-}
-
-std::vector<int> assemble(const std::string& assembly_file) {
-    std::ifstream file(assembly_file);
-    std::string line;
-    std::vector<int> binary_output;
-
-    while (std::getline(file, line)) {
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-
-        std::string instruction;
-        std::vector<int> tokens;
-        std::istringstream iss(line);
-        iss >> instruction;
-        int token;
-        while (iss >> token) {
-            tokens.push_back(token);
-        }
-
-        int binary;
-        try {
-            if (R_TYPE_FUNCTIONS.count(instruction)) {
-                binary = r_type_encoding(tokens[0], tokens[1], tokens[2], instruction);
-            } else if (I_TYPE_FUNCTIONS.count(instruction)) {
-                binary = i_type_encoding(tokens[0], tokens[1], tokens[2], instruction);
-            } else if (S_TYPE_FUNCTIONS.count(instruction)) {
-                binary = s_type_encoding(tokens[0], tokens[1], tokens[2], instruction);
-            } else if (B_TYPE_FUNCTIONS.count(instruction)) {
-                binary = b_type_encoding(tokens[0], tokens[1], tokens[2], instruction);
-            } else if (U_TYPE_FUNCTIONS.count(instruction)) {
-                binary = u_type_encoding(tokens[0], tokens[1], instruction);
-            } else if (J_TYPE_FUNCTIONS.count(instruction)) {
-                binary = j_type_encoding(tokens[0], tokens[1], instruction);
-            } else {
-                std::cout << "Error: Unknown instruction '" << instruction << "'" << std::endl;
-                continue;
-            }
-
-            binary_output.push_back(binary);
-        } catch (const std::invalid_argument& e) {
-            std::cerr << "Error: " << e.what() << std::endl;
-        }
-    }
-
-    return binary_output;
-}
+x = assembler()
+new_lines = x.remove_special_characters(lines)
 
 
-int main() {
-    std::vector<int> binary_output = assemble("C:\\Users\\kumar\\Downloads\\test3.asm");
+pc = 0
 
-    write_binary_to_file("C:\\Users\\kumar\\Downloads\\TEst.txt", binary_output);
 
-    // Open the output file
-    std::string command = "notepad C:\\Users\\kumar\\Downloads\\TEst.txt";  // Change 'notepad' to your preferred text editor
-    system(command.c_str());
+if 'beq zero,zero,0' not in new_lines:
+    print('Error: Missing virtual halt')
+    globals()['pc'] = len(globals()['new_lines'])
+    
+for label in labels:
+    if label.replace(' ', '') != label:
+        print('Error: Invalid labels')
+        globals()['pc'] = len(globals()['new_lines'])
 
-    return 0;
-}
+while pc//4 < len(new_lines):
+    x.execution(new_lines[int(pc//4)])
+    
+output.close()
